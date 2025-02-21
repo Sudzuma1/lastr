@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Доска объявлений "Городская поляна"</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        header {
+            background-color: #28a745;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 2rem;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        main {
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .ad-form, .promo-form {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .ad-form input, .ad-form textarea, .ad-form button, .promo-form input, .promo-form button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        .ad-form button, .promo-form button {
+            background: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .ad-form button:hover, .promo-form button:hover {
+            background: #218838;
+        }
+        .ad-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .ad {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            width: 300px;
+            transition: transform 0.2s;
+        }
+        .ad.premium {
+            border: 3px solid gold;
+            background: #fffde7;
+        }
+        .ad:hover {
+            transform: translateY(-5px);
+        }
+        .ad img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+        .ad h3 {
+            font-size: 1.2rem;
+            margin: 10px 0;
+        }
+        .ad p {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .ad button {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .ad button:hover {
+            background: #c82333;
+        }
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            margin-top: 20px;
+        }
+        .loading {
+            text-align: center;
+            display: none;
+            margin: 20px 0;
+        }
+        .whatsapp-link {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #25D366;
+            color: white;
+            padding: 15px;
+            border-radius: 50%;
+            text-decoration: none;
+            font-size: 1.5rem;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        .whatsapp-link:hover {
+            background: #1da851;
+        }
+        #countdown {
+            text-align: center;
+            padding: 10px;
+            background: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            margin: 20px auto;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <header>Доска объявлений "Городская поляна"</header>
+    <main>
+        <div class="ad-form">
+            <form id="adForm">
+                <input type="text" id="title" placeholder="Название объявления" maxlength="50" required>
+                <input type="file" id="photo" accept="image/*" required>
+                <textarea id="description" placeholder="Описание (до 200 символов)" maxlength="200" required></textarea>
+                <input type="text" id="promoCode" placeholder="Промокод для премиум (необязательно)">
+                <button type="submit">Добавить объявление</button>
+            </form>
+        </div>
+        <div class="promo-form">
+            <h3>Хотите премиум-объявление?</h3>
+            <p>Оплатите через WhatsApp и получите промокод!</p>
+            <a href="https://wa.me/77057247069?text=Хочу%20премиум-объявление%20за%20500%20тенге" class="whatsapp-link" target="_blank">📞</a>
+        </div>
+        <div class="loading" id="loading">Загрузка...</div>
+        <div class="ad-grid" id="adGrid"></div>
+    </main>
+    <div id="countdown">До сброса объявлений: <span id="timer"></span></div>
+    <footer>© 2025 Городская доска объявлений</footer>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const adForm = document.getElementById('adForm');
+        const adGrid = document.getElementById('adGrid');
+        const loading = document.getElementById('loading');
+        const timerElement = document.getElementById('timer');
+
+        let userId = localStorage.getItem('userId');
+        if (!userId) {
+            userId = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('userId', userId);
+        }
+
+        adForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const title = document.getElementById('title').value;
+            const photoFile = document.getElementById('photo').files[0];
+            const description = document.getElementById('description').value;
+            const promoCode = document.getElementById('promoCode').value;
+
+            if (!title || !photoFile || !description) {
+                alert('Заполните обязательные поля!');
+                return;
+            }
+
+            loading.style.display = 'block';
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const newAd = {
+                    title,
+                    photo: e.target.result,
+                    description,
+                    userId,
+                    promoCode: promoCode || null
+                };
+                socket.emit('new-ad', newAd, (response) => {
+                    if (response.success) {
+                        adForm.reset();
+                        alert('Объявление отправлено на проверку!');
+                    } else {
+                        alert(response.message || 'Ошибка!');
+                    }
+                    loading.style.display = 'none';
+                });
+            };
+            reader.readAsDataURL(photoFile);
+        });
+
+        socket.on('new-ad', (ad) => {
+            const adElement = createAdElement(ad);
+            if (ad.isPremium) {
+                adGrid.prepend(adElement);
+            } else {
+                adGrid.appendChild(adElement);
+            }
+        });
+
+        socket.on('initial-ads', (ads) => {
+            adGrid.innerHTML = '';
+            ads.sort((a, b) => b.isPremium - a.isPremium);
+            ads.forEach(ad => adGrid.appendChild(createAdElement(ad)));
+        });
+
+        socket.on('delete-ad', (id) => {
+            const adElement = document.querySelector(`.ad[data-id="${id}"]`);
+            if (adElement) adElement.remove();
+        });
+
+        socket.on('reset-time', (nextReset) => {
+            updateCountdown(nextReset);
+        });
+
+        function updateCountdown(nextReset) {
+            const interval = setInterval(() => {
+                const now = Date.now();
+                const timeLeft = nextReset - now;
+                if (timeLeft <= 0) {
+                    clearInterval(interval);
+                    timerElement.textContent = 'Объявления сброшены!';
+                    adGrid.innerHTML = '';
+                    return;
+                }
+                const hours = Math.floor(timeLeft / (1000 * 60 * 60));
+                const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+                timerElement.textContent = `${hours}ч ${minutes}м ${seconds}с`;
+            }, 1000);
+        }
+
+        function createAdElement(ad) {
+            const div = document.createElement('div');
+            div.className = `ad ${ad.isPremium ? 'premium' : ''}`;
+            div.dataset.id = ad.id;
+            div.innerHTML = `
+                <img src="${ad.photo}" alt="${ad.title}">
+                <h3>${ad.title}</h3>
+                <p>${ad.description}</p>
+                ${ad.userId === userId ? `<button onclick="deleteAd(${ad.id})">Удалить</button>` : ''}
+            `;
+            return div;
+        }
+
+        function deleteAd(id) {
+            socket.emit('delete-ad', { adId: id, userId }, (response) => {
+                if (!response.success) {
+                    alert(response.message || 'Ошибка!');
+                }
+            });
+        }
+
+        window.generatePromoCode = function() {
+            const promo = 'PREMIUM_' + Math.random().toString(36).substr(2, 8).toUpperCase();
+            console.log('Ваш промокод:', promo);
+            return promo;
+        };
+    </script>
+</body>
+</html>
