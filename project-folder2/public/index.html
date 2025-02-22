@@ -65,6 +65,24 @@
         .ad.premium {
             border: 3px solid gold;
             background: #fffde7;
+            position: relative;
+        }
+        .ad.premium::before {
+            content: "Акция: 3 за 500 тенге!";
+            display: block;
+            background: gold;
+            color: black;
+            font-weight: bold;
+            padding: 5px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+            margin: -15px -15px 10px -15px;
+        }
+        .ad.premium .promo-text {
+            font-size: 0.8rem;
+            color: #dAA520;
+            margin-top: 5px;
+            font-style: italic;
         }
         .ad:hover {
             transform: translateY(-5px);
@@ -144,9 +162,9 @@
             </form>
         </div>
         <div class="promo-form">
-            <h3>Хотите премиум-объявление?</h3>
-            <p>Оплатите через WhatsApp и получите промокод!</p>
-            <a href="https://wa.me/77057247069?text=Хочу%20премиум-объявление%20за%20500%20тенге" class="whatsapp-link" target="_blank">📞</a>
+            <h3>Хотите премиум?</h3>
+            <p>Акция: 3 промокода за 500 тенге! Пишите в WhatsApp.</p>
+            <a href="https://wa.me/77057247069?text=Хочу%203%20премиум-объявления%20за%20500%20тенге" class="whatsapp-link" target="_blank">📞</a>
         </div>
         <div class="loading" id="loading">Загрузка...</div>
         <div class="ad-grid" id="adGrid"></div>
@@ -252,6 +270,7 @@
                 <img src="${ad.photo}" alt="${ad.title}">
                 <h3>${ad.title}</h3>
                 <p>${ad.description}</p>
+                ${ad.isPremium ? '<div class="promo-text">Золотая рамка и топ до сброса через 24ч!</div>' : ''}
                 ${ad.userId === userId ? `<button onclick="deleteAd(${ad.id})">Удалить</button>` : ''}
             `;
             return div;
