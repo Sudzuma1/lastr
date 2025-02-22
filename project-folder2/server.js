@@ -3,17 +3,25 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const dbPath = process.env.NODE_ENV === 'production' ? '/data/ads.db' : './ads.db';
+// Используем временный путь для Render и локальный для разработки
+const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/ads.db' : './ads.db';
+
 const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) console.error('Ошибка подключения к базе:', err);
-    else console.log('Подключено к базе данных');
+    if (err) {
+        console.error('Ошибка подключения к базе:', err);
+        process.exit(1);
+    } else {
+        console.log('Подключено к базе данных:', dbPath);
+    }
 });
 
+// Создание таблиц
 db.run(`CREATE TABLE IF NOT EXISTS ads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
@@ -53,10 +61,9 @@ app.get('/generate-promo', (req, res) => {
     });
 });
 
-// Маршрут для модерации с красивым интерфейсом
 app.get('/moderate', (req, res) => {
     const secret = req.query.secret;
-    if (secret !== 'mysecret123') { // Замените на свой пароль
+    if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
@@ -155,7 +162,7 @@ app.get('/approve/:id', (req, res) => {
             return;
         }
         io.emit('new-ad', getAdById(req.params.id));
-        res.redirect('/moderate?secret=mysecret123'); // Замените на свой пароль
+        res.redirect('/moderate?secret=mysecret123');
     });
 });
 
@@ -170,7 +177,7 @@ app.get('/reject/:id', (req, res) => {
             res.status(500).send('Ошибка сервера');
             return;
         }
-        res.redirect('/moderate?secret=mysecret123'); // Замените на свой пароль
+        res.redirect('/moderate?secret=mysecret123');
     });
 });
 
