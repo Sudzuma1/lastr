@@ -49,22 +49,7 @@ db.run(`CREATE TABLE IF NOT EXISTS promo_codes (
 db.run(`CREATE INDEX IF NOT EXISTS idx_userId ON ads(userId)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_status ON ads(status)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_code ON promo_codes(code)`);
-
-// Новый маршрут для проверки таблиц
-app.get('/check-db', (req, res) => {
-    const secret = req.query.secret;
-    if (secret !== 'mysecret123') { // Замените на свой пароль
-        res.status(403).send('Доступ запрещён');
-        return;
-    }
-    db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes")', (err, rows) => {
-        if (err) {
-            res.status(500).send('Ошибка проверки базы: ' + err.message);
-            return;
-        }
-        res.send(`Таблицы в базе:<br>${JSON.stringify(rows, null, 2).replace(/\n/g, '<br>')}`);
-    });
-});
+db.run(`CREATE INDEX IF NOT EXISTS idx_created ON ads(id DESC)`); // Индекс по дате
 
 app.use(express.static(path.join(__dirname, 'public'), {
     maxAge: '1d' // Кэш статических файлов на сутки
@@ -130,7 +115,6 @@ app.get('/moderate', (req, res) => {
                         margin-bottom: 15px;
                         border-radius: 5px;
                         background: white;
-                        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
                     }
                     img {
                         max-width: 200px;
