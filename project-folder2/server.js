@@ -12,24 +12,24 @@ const io = new Server(server);
 // Используем /data/ads.db на Render и ./ads.db локально
 const dbPath = process.env.NODE_ENV === 'production' ? '/data/ads.db' : './ads.db';
 
-// Проверка и создание директории для Render
+// Проверка, смонтирован ли диск на Render
 if (process.env.NODE_ENV === 'production') {
     if (!fs.existsSync('/data')) {
-        fs.mkdirSync('/data', { recursive: true });
-        console.log('Создана директория /data на Render');
+        console.error('Persistent Disk /data не смонтирован. Проверьте настройки в Render.');
+        process.exit(1);
     }
 }
 
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('Ошибка подключения к базе:', err);
-        process.exit(1); // Завершаем процесс при ошибке
+        process.exit(1);
     } else {
         console.log('Подключено к базе данных:', dbPath);
     }
 });
 
-// Создание таблиц
+// Создание таблиц и индексов
 db.run(`CREATE TABLE IF NOT EXISTS ads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
@@ -45,6 +45,26 @@ db.run(`CREATE TABLE IF NOT EXISTS promo_codes (
     code TEXT UNIQUE,
     used INTEGER DEFAULT 0
 )`);
+
+db.run(`CREATE INDEX IF NOT EXISTS idx_userId ON ads(userId)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_status ON ads(status)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_code ON promo_codes(code)`);
+
+// Новый маршрут для проверки таблиц
+app.get('/check-db', (req, res) => {
+    const secret = req.query.secret;
+    if (secret !== 'mysecret123') { // Замените на свой пароль
+        res.status(403).send('Доступ запрещён');
+        return;
+    }
+    db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes")', (err, rows) => {
+        if (err) {
+            res.status(500).send('Ошибка проверки базы: ' + err.message);
+            return;
+        }
+        res.send(`Таблицы в базе:<br>${JSON.stringify(rows, null, 2).replace(/\n/g, '<br>')}`);
+    });
+});
 
 app.use(express.static(path.join(__dirname, 'public'), {
     maxAge: '1d' // Кэш статических файлов на сутки
@@ -77,7 +97,7 @@ app.get('/moderate', (req, res) => {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.all("SELECT * FROM ads WHERE status = 'pending'", (err, rows) => {
+    db.all("SELECT * FROM ads WHERE status = 'pending' LIMIT 100", (err, rows) => {
         if (err) {
             res.status(500).send('Ошибка сервера');
             return;
@@ -212,7 +232,7 @@ setInterval(() => {
 io.on('connection', (socket) => {
     console.log('Пользователь подключен:', socket.id);
 
-    db.all("SELECT * FROM ads WHERE status = 'approved'", (err, rows) => {
+    db.all("SELECT * FROM ads WHERE status = 'approved' LIMIT 100", (err, rows) => {
         if (err) {
             console.error('Ошибка получения объявлений:', err);
             return;
@@ -237,7 +257,7 @@ io.on('connection', (socket) => {
 
             if (promoCode) {
                 db.get('SELECT * FROM promo_codes WHERE code = ? AND used = 0', [promoCode], (err, row) => {
-                    console.log('Проверка промокода:', promoCode, 'Найден:', row); // Отладка
+                    console.log('Проверка промокода:', promoCode, 'Найден:', row);
                     if (err || !row) {
                         callback({ success: false, message: 'Неверный или использованный промокод' });
                         return;
@@ -305,7 +325,7 @@ function getAdById(id) {
     });
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
     console.log(`Сервер запущен на порту ${PORT}`);
     resetAds();
