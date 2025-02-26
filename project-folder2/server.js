@@ -29,27 +29,39 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
-// Создание таблиц и индексов
-db.run(`CREATE TABLE IF NOT EXISTS ads (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    photo TEXT,
-    description TEXT,
-    userId TEXT,
-    isPremium BOOLEAN DEFAULT 0,
-    status TEXT DEFAULT 'pending'
-)`);
+// Проверка существования таблиц при запуске
+db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes")', (err, rows) => {
+    if (err) {
+        console.error('Ошибка проверки таблиц:', err);
+        process.exit(1);
+    }
+    if (rows.length === 0) {
+        console.log('Таблицы не найдены, создаём...');
+        // Создание таблиц и индексов
+        db.run(`CREATE TABLE IF NOT EXISTS ads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            photo TEXT,
+            description TEXT,
+            userId TEXT,
+            isPremium BOOLEAN DEFAULT 0,
+            status TEXT DEFAULT 'pending'
+        )`);
 
-db.run(`CREATE TABLE IF NOT EXISTS promo_codes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT UNIQUE,
-    used INTEGER DEFAULT 0
-)`);
+        db.run(`CREATE TABLE IF NOT EXISTS promo_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE,
+            used INTEGER DEFAULT 0
+        )`);
 
-db.run(`CREATE INDEX IF NOT EXISTS idx_userId ON ads(userId)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_status ON ads(status)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_code ON promo_codes(code)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_created ON ads(id DESC)`); // Индекс по дате
+        db.run(`CREATE INDEX IF NOT EXISTS idx_userId ON ads(userId)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_status ON ads(status)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_code ON promo_codes(code)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_created ON ads(id DESC)`);
+    } else {
+        console.log('Таблицы найдены:', rows.map(row => row.name).join(', '));
+    }
+});
 
 app.use(express.static(path.join(__dirname, 'public'), {
     maxAge: '1d' // Кэш статических файлов на сутки
@@ -73,6 +85,21 @@ app.get('/generate-promo', (req, res) => {
             return;
         }
         res.send(`Ваш промокод: ${promoCode}`);
+    });
+});
+
+app.get('/check-db', (req, res) => {
+    const secret = req.query.secret;
+    if (secret !== 'mysecret123') { // Замените на свой пароль
+        res.status(403).send('Доступ запрещён');
+        return;
+    }
+    db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes")', (err, rows) => {
+        if (err) {
+            res.status(500).send('Ошибка проверки базы: ' + err.message);
+            return;
+        }
+        res.send(`Таблицы в базе:<br>${JSON.stringify(rows, null, 2).replace(/\n/g, '<br>')}`);
     });
 });
 
@@ -228,9 +255,16 @@ io.on('connection', (socket) => {
 
     socket.on('new-ad', (ad, callback) => {
         const { title, photo, description, userId, promoCode } = ad;
+        console.log('Получено фото размером:', photo ? photo.length / 1024 : 0, 'KB'); // Размер в KB
+
+        if (photo && photo.length > 2097152) { // 2 MB в Base64
+            callback({ success: false, message: 'Фото слишком большое! Максимум 2 MB. Сжмите изображение.' });
+            return;
+        }
 
         db.get('SELECT COUNT(*) as count FROM ads WHERE userId = ?', [userId], (err, row) => {
             if (err) {
+                console.error('Ошибка проверки userId:', err);
                 callback({ success: false, message: 'Ошибка сервера' });
                 return;
             }
@@ -248,6 +282,7 @@ io.on('connection', (socket) => {
                     }
                     db.run('UPDATE promo_codes SET used = 1 WHERE code = ?', [promoCode], (err) => {
                         if (err) {
+                            console.error('Ошибка обновления промокода:', err);
                             callback({ success: false, message: 'Ошибка сервера' });
                             return;
                         }
@@ -262,7 +297,12 @@ io.on('connection', (socket) => {
 
     socket.on('delete-ad', (data, callback) => {
         db.get('SELECT userId FROM ads WHERE id = ?', [data.adId], (err, row) => {
-            if (err || !row) {
+            if (err) {
+                console.error('Ошибка получения объявления для удаления:', err);
+                callback({ success: false, message: 'Объявление не найдено' });
+                return;
+            }
+            if (!row) {
                 callback({ success: false, message: 'Объявление не найдено' });
                 return;
             }
@@ -272,6 +312,7 @@ io.on('connection', (socket) => {
             }
             db.run('DELETE FROM ads WHERE id = ?', [data.adId], (err) => {
                 if (err) {
+                    console.error('Ошибка удаления объявления:', err);
                     callback({ success: false, message: 'Ошибка сервера' });
                     return;
                 }

@@ -18,7 +18,6 @@
             padding: 20px;
             text-align: center;
             font-size: 2rem;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
         }
         main {
             padding: 20px;
@@ -29,7 +28,6 @@
             background: white;
             padding: 20px;
             border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
         }
         .ad-form input, .ad-form textarea, .ad-form button, .promo-form input, .promo-form button {
@@ -58,9 +56,7 @@
             background: white;
             padding: 15px;
             border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
             width: 300px;
-            transition: transform 0.2s;
         }
         .ad.premium {
             border: 3px solid gold;
@@ -83,9 +79,6 @@
             color: #dAA520;
             margin-top: 5px;
             font-style: italic;
-        }
-        .ad:hover {
-            transform: translateY(-5px);
         }
         .ad img {
             width: 100%;
@@ -143,7 +136,6 @@
             padding: 10px;
             background: #fff;
             border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
             margin: 20px auto;
             max-width: 300px;
         }
@@ -151,6 +143,9 @@
 </head>
 <body>
     <header>Доска объявлений "Городская поляна"</header>
+    <div style="text-align: center; color: #666; margin: 20px; background: #fff; padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);">
+        Это тестовая версия сайта. Загрузка может быть медленной — подождите 5-10 секунд. Фото должно быть меньше 2 MB, иначе запрос не отправится.
+    </div>
     <main>
         <div class="ad-form">
             <form id="adForm">
@@ -163,7 +158,7 @@
         </div>
         <div class="promo-form">
             <h3>Хотите премиум?</h3>
-            <p>Акция: 3 промокода за 500 тенге! Пишите в WhatsApp.</p>
+            <p>Акция: 3 промокода за 500 тенге! Пишите в WhatsApp: +77057247069.</p>
             <a href="https://wa.me/77057247069?text=Хочу%203%20премиум-объявления%20за%20500%20тенге" class="whatsapp-link" target="_blank">📞</a>
         </div>
         <div class="loading" id="loading">Загрузка...</div>
@@ -172,6 +167,7 @@
     <div id="countdown">До сброса объявлений: <span id="timer"></span></div>
     <footer>© 2025 Городская доска объявлений</footer>
 
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
@@ -186,7 +182,7 @@
             localStorage.setItem('userId', userId);
         }
 
-        adForm.addEventListener('submit', (e) => {
+        adForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const title = document.getElementById('title').value;
             const photoFile = document.getElementById('photo').files[0];
@@ -198,27 +194,50 @@
                 return;
             }
 
+            console.log('Отправка запроса на добавление объявления:', { title, userId, promoCode });
             loading.style.display = 'block';
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                const newAd = {
-                    title,
-                    photo: e.target.result,
-                    description,
-                    userId,
-                    promoCode: promoCode || null
-                };
-                socket.emit('new-ad', newAd, (response) => {
-                    if (response.success) {
-                        adForm.reset();
-                        alert('Объявление отправлено на проверку!');
-                    } else {
-                        alert(response.message || 'Ошибка!');
-                    }
+
+            try {
+                // Проверка размера файла перед сжатием
+                if (photoFile.size > 2097152) { // 2 MB
+                    alert('Фото слишком большое! Выберите файл меньше 2 MB или сжмите его.');
                     loading.style.display = 'none';
+                    return;
+                }
+
+                // Сжатие изображения
+                const compressedFile = await imageCompression(photoFile, {
+                    maxSizeMB: 2, // 2 MB
+                    maxWidthOrHeight: 1600, // Максимальная ширина/высота
+                    useWebWorker: true
                 });
-            };
-            reader.readAsDataURL(photoFile);
+
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const newAd = {
+                        title,
+                        photo: e.target.result,
+                        description,
+                        userId,
+                        promoCode: promoCode || null
+                    };
+                    socket.emit('new-ad', newAd, (response) => {
+                        console.log('Ответ от сервера:', response);
+                        if (response.success) {
+                            adForm.reset();
+                            alert('Объявление отправлено на проверку!');
+                        } else {
+                            alert(response.message || 'Ошибка!');
+                        }
+                        loading.style.display = 'none';
+                    });
+                };
+                reader.readAsDataURL(compressedFile);
+            } catch (error) {
+                console.error('Ошибка сжатия изображения:', error);
+                alert('Ошибка при обработке фото. Попробуйте выбрать меньший файл.');
+                loading.style.display = 'none';
+            }
         });
 
         socket.on('new-ad', (ad) => {
