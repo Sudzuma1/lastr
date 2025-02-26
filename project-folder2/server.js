@@ -9,13 +9,21 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Используем временный путь для Render и локальный для разработки
-const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/ads.db' : './ads.db';
+// Используем /data/ads.db на Render и ./ads.db локально
+const dbPath = process.env.NODE_ENV === 'production' ? '/data/ads.db' : './ads.db';
+
+// Проверка и создание директории для Render
+if (process.env.NODE_ENV === 'production') {
+    if (!fs.existsSync('/data')) {
+        fs.mkdirSync('/data', { recursive: true });
+        console.log('Создана директория /data на Render');
+    }
+}
 
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('Ошибка подключения к базе:', err);
-        process.exit(1);
+        process.exit(1); // Завершаем процесс при ошибке
     } else {
         console.log('Подключено к базе данных:', dbPath);
     }
@@ -38,7 +46,9 @@ db.run(`CREATE TABLE IF NOT EXISTS promo_codes (
     used INTEGER DEFAULT 0
 )`);
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+    maxAge: '1d' // Кэш статических файлов на сутки
+}));
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -227,6 +237,7 @@ io.on('connection', (socket) => {
 
             if (promoCode) {
                 db.get('SELECT * FROM promo_codes WHERE code = ? AND used = 0', [promoCode], (err, row) => {
+                    console.log('Проверка промокода:', promoCode, 'Найден:', row); // Отладка
                     if (err || !row) {
                         callback({ success: false, message: 'Неверный или использованный промокод' });
                         return;
