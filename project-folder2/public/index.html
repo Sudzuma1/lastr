@@ -171,6 +171,23 @@
                 padding: 15px;
             }
         }
+
+        /* Стили для блока с инструкциями */
+        .photo-tips {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .photo-tips ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        .photo-tips li {
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -179,6 +196,15 @@
         Это тестовая версия сайта. Загрузка может быть медленной — подождите 5-10 секунд. Фото должно быть меньше 2 MB, иначе запрос не отправится.
     </div>
     <main>
+        <div class="photo-tips">
+            <h3>Советы по фото для объявлений</h3>
+            <ul>
+                <li>Сделайте фото при хорошем освещении (днём, без теней).</li>
+                <li>Используйте камеру телефона, снимите с близкого расстояния.</li>
+                <li>Сожмите фото до 2 MB (в Google Photos или галерее).</li>
+                <li>Если не уверены, как сделать фото, пишите в WhatsApp: +77057247069 — помогу!</li>
+            </ul>
+        </div>
         <div class="ad-form">
             <form id="adForm">
                 <input type="text" id="title" placeholder="Название объявления" maxlength="50" required>
