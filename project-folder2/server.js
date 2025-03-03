@@ -231,6 +231,13 @@ app.get('/moderate', (req, res) => {
                         border-radius: 3px;
                         font-weight: bold;
                     }
+                    .permanent {
+                        background: #4CAF50;
+                        color: white;
+                        padding: 3px 6px;
+                        border-radius: 3px;
+                        margin-left: 5px;
+                    }
                 </style>
                 <script>
                     // Автоматическое обновление страницы каждые 10 секунд
@@ -282,11 +289,12 @@ app.get('/approve/:id', (req, res) => {
     }
     db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, ad) => {
         if (err || !ad) {
-            res.status(500).send('Ошибка сервера');
+            res.status(500).send('Объявление не найдено');
             return;
         }
         db.run("UPDATE ads SET status = 'approved' WHERE id = ?", [req.params.id], (err) => {
             if (err) {
+                console.error('Ошибка одобрения объявления:', err);
                 res.status(500).send('Ошибка сервера');
                 return;
             }
@@ -304,6 +312,7 @@ app.get('/reject/:id', (req, res) => {
     }
     db.run("DELETE FROM ads WHERE id = ?", [req.params.id], (err) => {
         if (err) {
+            console.error('Ошибка отклонения объявления:', err);
             res.status(500).send('Ошибка сервера');
             return;
         }
@@ -318,18 +327,41 @@ app.get('/make-permanent/:id', (req, res) => {
         return;
     }
     db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, ad) => {
-        if (err || !ad || ad.status !== 'approved') {
-            res.status(500).send('Ошибка сервера или объявление не одобрено');
+        if (err) {
+            console.error('Ошибка получения объявления для постоянного статуса:', err);
+            res.status(500).send('Ошибка сервера');
             return;
         }
-        db.run('INSERT INTO permanent_ads (title, photo, description, userId, isPremium) VALUES (?, ?, ?, ?, ?)',
-            [ad.title, ad.photo, ad.description, ad.userId, ad.isPremium], (err) => {
-                if (err) {
-                    res.status(500).send('Ошибка сохранения постоянного объявления');
-                    return;
-                }
-                res.redirect('/moderate?secret=mysecret123');
-            });
+        if (!ad) {
+            res.status(404).send('Объявление не найдено');
+            return;
+        }
+        if (ad.status !== 'approved') {
+            console.log('Попытка сделать постоянным необApproved объявление:', ad);
+            res.status(400).send('Объявление должно быть одобрено');
+            return;
+        }
+        // Проверяем, уже ли оно постоянное
+        db.get("SELECT * FROM permanent_ads WHERE id = ?", [ad.id], (err, permanentAd) => {
+            if (err) {
+                console.error('Ошибка проверки постоянного объявления:', err);
+                res.status(500).send('Ошибка сервера');
+                return;
+            }
+            if (permanentAd) {
+                res.status(400).send('Объявление уже постоянное');
+                return;
+            }
+            db.run('INSERT INTO permanent_ads (id, title, photo, description, userId, isPremium) VALUES (?, ?, ?, ?, ?, ?)',
+                [ad.id, ad.title, ad.photo, ad.description, ad.userId, ad.isPremium], (err) => {
+                    if (err) {
+                        console.error('Ошибка сохранения постоянного объявления:', err);
+                        res.status(500).send('Ошибка сохранения постоянного объявления');
+                        return;
+                    }
+                    res.redirect('/moderate?secret=mysecret123');
+                });
+        });
     });
 });
 
@@ -341,6 +373,7 @@ app.get('/remove-permanent/:id', (req, res) => {
     }
     db.run('DELETE FROM permanent_ads WHERE id = ?', [req.params.id], (err) => {
         if (err) {
+            console.error('Ошибка удаления постоянного объявления:', err);
             res.status(500).send('Ошибка удаления постоянного объявления');
             return;
         }
