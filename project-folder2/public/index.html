@@ -283,6 +283,7 @@
         });
 
         socket.on('new-ad', (ad) => {
+            console.log('Новое объявление:', ad); // Отладка
             const adElement = createAdElement(ad);
             if (ad.isPremium && ad.userId === userId) {
                 adGrid.prepend(adElement);
@@ -294,6 +295,7 @@
         });
 
         socket.on('initial-ads', (ads) => {
+            console.log('Получены объявления:', ads.length); // Отладка
             adGrid.innerHTML = '';
             ads.sort((a, b) => b.isPremium - a.isPremium);
             ads.forEach(ad => adGrid.appendChild(createAdElement(ad)));

@@ -30,13 +30,13 @@ const db = new sqlite3.Database(dbPath, (err) => {
 });
 
 // Проверка существования таблиц при запуске
-db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes")', (err, rows) => {
+db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes", "permanent_ads")', (err, rows) => {
     if (err) {
         console.error('Ошибка проверки таблиц:', err);
         process.exit(1);
     }
-    if (rows.length === 0) {
-        console.log('Таблицы не найдены, создаём...');
+    if (rows.length < 3) {
+        console.log('Таблицы не все найдены, создаём...');
         // Создание таблиц и индексов
         db.run(`CREATE TABLE IF NOT EXISTS ads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,12 +54,22 @@ db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "p
             used INTEGER DEFAULT 0
         )`);
 
+        db.run(`CREATE TABLE IF NOT EXISTS permanent_ads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            photo TEXT,
+            description TEXT,
+            userId TEXT,
+            isPremium BOOLEAN DEFAULT 0
+        )`);
+
         db.run(`CREATE INDEX IF NOT EXISTS idx_userId ON ads(userId)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_status ON ads(status)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_code ON promo_codes(code)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_created ON ads(id DESC)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_permanent ON permanent_ads(id DESC)`);
     } else {
-        console.log('Таблицы найдены:', rows.map(row => row.name).join(', '));
+        console.log('Все таблицы найдены:', rows.map(row => row.name).join(', '));
     }
 });
 
@@ -94,7 +104,7 @@ app.get('/check-db', (req, res) => {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes")', (err, rows) => {
+    db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes", "permanent_ads")', (err, rows) => {
         if (err) {
             res.status(500).send('Ошибка проверки базы: ' + err.message);
             return;
@@ -156,7 +166,7 @@ app.get('/moderate', (req, res) => {
                     a:hover {
                         text-decoration: underline;
                     }
-                    .approve {
+                    .approve, .make-permanent, .remove-permanent {
                         color: #28a745;
                     }
                     .reject {
@@ -166,7 +176,19 @@ app.get('/moderate', (req, res) => {
                         color: gold;
                         font-weight: bold;
                     }
+                    .new-request {
+                        background: #ffeb3b;
+                        padding: 5px;
+                        border-radius: 3px;
+                        font-weight: bold;
+                    }
                 </style>
+                <script>
+                    // Автоматическое обновление страницы каждые 10 секунд
+                    setInterval(() => {
+                        location.reload();
+                    }, 10000);
+                </script>
             </head>
             <body>
                 <h1>Модерация объявлений</h1>
@@ -182,11 +204,23 @@ app.get('/moderate', (req, res) => {
                         ${ad.description}<br>
                         <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
                         <a href="/approve/${ad.id}?secret=${secret}" class="approve">Одобрить</a> |
-                        <a href="/reject/${ad.id}?secret=${secret}" class="reject">Отклонить</a>
+                        <a href="/reject/${ad.id}?secret=${secret}" class="reject">Отклонить</a> |
+                        <a href="/make-permanent/${ad.id}?secret=${secret}" class="make-permanent">Сделать постоянным</a>
+                        <span class="new-request" id="request-${ad.id}">Новое</span>
                     </li>`;
             });
         }
-        html += `</ul></body></html>`;
+        html += `</ul>
+                <audio id="notificationSound" src="https://www.myinstants.com/media/sounds/notification-sound-effect.mp3" preload="auto"></audio>
+                <script>
+                    const socket = io();
+                    socket.on('new-pending-ad', (adId) => {
+                        document.getElementById('request-' + adId)?.classList.add('new-request');
+                        document.getElementById('notificationSound').play();
+                    });
+                </script>
+            </body>
+            </html>`;
         res.send(html);
     });
 });
@@ -197,13 +231,19 @@ app.get('/approve/:id', (req, res) => {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.run("UPDATE ads SET status = 'approved' WHERE id = ?", [req.params.id], (err) => {
-        if (err) {
+    db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, ad) => {
+        if (err || !ad) {
             res.status(500).send('Ошибка сервера');
             return;
         }
-        io.emit('new-ad', getAdById(req.params.id));
-        res.redirect('/moderate?secret=mysecret123');
+        db.run("UPDATE ads SET status = 'approved' WHERE id = ?", [req.params.id], (err) => {
+            if (err) {
+                res.status(500).send('Ошибка сервера');
+                return;
+            }
+            io.emit('new-ad', ad);
+            res.redirect('/moderate?secret=mysecret123');
+        });
     });
 });
 
@@ -222,6 +262,43 @@ app.get('/reject/:id', (req, res) => {
     });
 });
 
+app.get('/make-permanent/:id', (req, res) => {
+    const secret = req.query.secret;
+    if (secret !== 'mysecret123') {
+        res.status(403).send('Доступ запрещён');
+        return;
+    }
+    db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, ad) => {
+        if (err || !ad || ad.status !== 'approved') {
+            res.status(500).send('Ошибка сервера или объявление не одобрено');
+            return;
+        }
+        db.run('INSERT INTO permanent_ads (title, photo, description, userId, isPremium) VALUES (?, ?, ?, ?, ?)',
+            [ad.title, ad.photo, ad.description, ad.userId, ad.isPremium], (err) => {
+                if (err) {
+                    res.status(500).send('Ошибка сохранения постоянного объявления');
+                    return;
+                }
+                res.redirect('/moderate?secret=mysecret123');
+            });
+    });
+});
+
+app.get('/remove-permanent/:id', (req, res) => {
+    const secret = req.query.secret;
+    if (secret !== 'mysecret123') {
+        res.status(403).send('Доступ запрещён');
+        return;
+    }
+    db.run('DELETE FROM permanent_ads WHERE id = ?', [req.params.id], (err) => {
+        if (err) {
+            res.status(500).send('Ошибка удаления постоянного объявления');
+            return;
+        }
+        res.redirect('/moderate?secret=mysecret123');
+    });
+});
+
 const RESET_INTERVAL = 24 * 60 * 60 * 1000;
 let nextReset = Date.now() + RESET_INTERVAL;
 
@@ -229,7 +306,14 @@ function resetAds() {
     db.run("DELETE FROM ads WHERE status = 'approved'", (err) => {
         if (err) console.error('Ошибка при сбросе объявлений:', err);
         else console.log('Объявления сброшены');
-        io.emit('initial-ads', []);
+        // Загружаем постоянные объявления
+        db.all("SELECT * FROM permanent_ads", (err, permanentRows) => {
+            if (err) {
+                console.error('Ошибка загрузки постоянных объявлений:', err);
+                return;
+            }
+            io.emit('initial-ads', permanentRows);
+        });
         nextReset = Date.now() + RESET_INTERVAL;
         io.emit('reset-time', nextReset);
     });
@@ -243,12 +327,23 @@ setInterval(() => {
 io.on('connection', (socket) => {
     console.log('Пользователь подключен:', socket.id);
 
-    db.all("SELECT * FROM ads WHERE status = 'approved' LIMIT 100", (err, rows) => {
+    // Загружаем как временные, так и постоянные объявления
+    db.all("SELECT * FROM ads WHERE status = 'approved' LIMIT 100", (err, tempRows) => {
         if (err) {
-            console.error('Ошибка получения объявлений:', err);
+            console.error('Ошибка получения временных объявлений:', err);
+            socket.emit('initial-ads', []);
             return;
         }
-        socket.emit('initial-ads', rows);
+        db.all("SELECT * FROM permanent_ads", (err, permanentRows) => {
+            if (err) {
+                console.error('Ошибка получения постоянных объявлений:', err);
+                socket.emit('initial-ads', tempRows);
+                return;
+            }
+            const allAds = [...tempRows, ...permanentRows].sort((a, b) => b.isPremium - a.isPremium);
+            console.log('Отправлены объявления:', allAds.length); // Отладка
+            socket.emit('initial-ads', allAds.slice(0, 100)); // Ограничиваем до 100
+        });
     });
 
     socket.emit('reset-time', nextReset);
@@ -337,6 +432,8 @@ function saveAd(title, photo, description, userId, isPremium, callback) {
                 callback({ success: false, message: 'Ошибка сервера' });
                 return;
             }
+            // Уведомляем модератора о новом запросе
+            io.emit('new-pending-ad', this.lastID);
             callback({ success: true });
         }
     );
@@ -345,7 +442,7 @@ function saveAd(title, photo, description, userId, isPremium, callback) {
 function getAdById(id) {
     return new Promise((resolve) => {
         db.get("SELECT * FROM ads WHERE id = ?", [id], (err, row) => {
-            resolve(row);
+            resolve(row || {});
         });
     });
 }
