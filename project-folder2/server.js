@@ -266,18 +266,54 @@ app.get('/moderate', (req, res) => {
                     </li>`;
             });
         }
-        html += `</ul>
-                <audio id="notificationSound" src="https://www.myinstants.com/media/sounds/notification-sound-effect.mp3" preload="auto"></audio>
-                <script>
-                    const socket = io();
-                    socket.on('new-pending-ad', (adId) => {
-                        document.getElementById('request-' + adId)?.classList.add('new-request');
-                        document.getElementById('notificationSound').play();
+        // Показываем одобренные и постоянные объявления для удобства
+        db.all("SELECT * FROM ads WHERE status = 'approved' LIMIT 100", (err, approvedRows) => {
+            if (err) {
+                console.error('Ошибка получения одобренных объявлений:', err);
+                return;
+            }
+            db.all("SELECT * FROM permanent_ads", (err, permanentRows) => {
+                if (err) {
+                    console.error('Ошибка получения постоянных объявлений:', err);
+                    return;
+                }
+                approvedRows.forEach(ad => {
+                    html += `
+                        <li style="background: #e0e0e0;">
+                            <strong>${ad.title}</strong><br>
+                            <img src="${ad.photo}"><br>
+                            ${ad.description}<br>
+                            <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>`;
+                    db.get("SELECT * FROM permanent_ads WHERE id = ?", [ad.id], (err, permanentAd) => {
+                        if (err) {
+                            console.error('Ошибка проверки постоянного статуса:', err);
+                            return;
+                        }
+                        if (permanentAd) {
+                            html += `<span class="permanent">Постоянное</span> |
+                                    <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a>`;
+                        } else {
+                            html += `<a href="/make-permanent/${ad.id}?secret=${secret}" class="make-permanent">Сделать постоянным</a>`;
+                        }
+                        html += `</li>`;
                     });
-                </script>
-            </body>
-            </html>`;
-        res.send(html);
+                });
+                permanentRows.forEach(ad => {
+                    if (!approvedRows.some(row => row.id === ad.id)) {
+                        html += `
+                            <li style="background: #e0e0e0;">
+                                <strong>${ad.title}</strong><br>
+                                <img src="${ad.photo}"><br>
+                                ${ad.description}<br>
+                                <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
+                                <span class="permanent">Постоянное</span> |
+                                <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a>
+                            </li>`;
+                    }
+                });
+                res.send(html);
+            });
+        });
     });
 });
 
@@ -289,17 +325,30 @@ app.get('/approve/:id', (req, res) => {
     }
     db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, ad) => {
         if (err || !ad) {
+            console.error('Объявление не найдено при одобрении:', err || 'Нет данных');
             res.status(500).send('Объявление не найдено');
             return;
         }
+        // Логируем текущее состояние перед обновлением
+        console.log('Состояние объявления перед одобрением:', { id: req.params.id, status: ad.status });
         db.run("UPDATE ads SET status = 'approved' WHERE id = ?", [req.params.id], (err) => {
             if (err) {
                 console.error('Ошибка одобрения объявления:', err);
                 res.status(500).send('Ошибка сервера');
                 return;
             }
-            io.emit('new-ad', ad);
-            res.redirect('/moderate?secret=mysecret123');
+            // Проверяем, обновился ли статус в базе
+            db.get("SELECT status FROM ads WHERE id = ?", [req.params.id], (err, updatedAd) => {
+                if (err) {
+                    console.error('Ошибка проверки обновлённого статуса:', err);
+                    res.status(500).send('Ошибка проверки статуса');
+                    return;
+                }
+                console.log('Объявление одобрено, новый статус:', { id: req.params.id, status: updatedAd.status });
+                // Убедимся, что одобренное объявление отображается в модерации как одобренное
+                io.emit('new-ad', { ...ad, status: 'approved' });
+                res.redirect('/moderate?secret=mysecret123');
+            });
         });
     });
 });
@@ -336,8 +385,9 @@ app.get('/make-permanent/:id', (req, res) => {
             res.status(404).send('Объявление не найдено');
             return;
         }
+        // Проверяем, одобрено ли объявление, с отладкой
+        console.log('Проверка статуса для постоянного:', { id: req.params.id, status: ad.status });
         if (ad.status !== 'approved') {
-            console.log('Попытка сделать постоянным необApproved объявление:', ad);
             res.status(400).send('Объявление должно быть одобрено');
             return;
         }
@@ -359,6 +409,7 @@ app.get('/make-permanent/:id', (req, res) => {
                         res.status(500).send('Ошибка сохранения постоянного объявления');
                         return;
                     }
+                    console.log('Объявление сделано постоянным:', ad.id);
                     res.redirect('/moderate?secret=mysecret123');
                 });
         });
@@ -377,6 +428,7 @@ app.get('/remove-permanent/:id', (req, res) => {
             res.status(500).send('Ошибка удаления постоянного объявления');
             return;
         }
+        console.log('Постоянное объявление удалено:', req.params.id);
         res.redirect('/moderate?secret=mysecret123');
     });
 });
