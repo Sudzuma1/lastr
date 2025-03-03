@@ -277,6 +277,9 @@ app.get('/moderate', (req, res) => {
                     console.error('Ошибка получения постоянных объявлений:', err);
                     return;
                 }
+                if (approvedRows.length > 0 || permanentRows.length > 0) {
+                    html += `<h2>Одобренные и постоянные объявления</h2>`;
+                }
                 approvedRows.forEach(ad => {
                     html += `
                         <li style="background: #e0e0e0;">
