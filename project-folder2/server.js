@@ -29,48 +29,97 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
-// Проверка существования таблиц при запуске
-db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes", "permanent_ads")', (err, rows) => {
-    if (err) {
-        console.error('Ошибка проверки таблиц:', err);
-        process.exit(1);
-    }
-    if (rows.length < 3) {
-        console.log('Таблицы не все найдены, создаём...');
-        // Создание таблиц и индексов
-        db.run(`CREATE TABLE IF NOT EXISTS ads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            photo TEXT,
-            description TEXT,
-            userId TEXT,
-            isPremium BOOLEAN DEFAULT 0,
-            status TEXT DEFAULT 'pending'
-        )`);
+// Создание таблиц с проверкой и отладкой
+function initializeDatabase(callback) {
+    db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes", "permanent_ads")', (err, rows) => {
+        if (err) {
+            console.error('Ошибка проверки существующих таблиц:', err);
+            process.exit(1);
+            return;
+        }
+        console.log('Найденные таблицы:', rows.map(row => row.name).join(', '));
 
-        db.run(`CREATE TABLE IF NOT EXISTS promo_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE,
-            used INTEGER DEFAULT 0
-        )`);
+        const tablesToCreate = [];
+        if (!rows.some(row => row.name === 'ads')) {
+            tablesToCreate.push(`CREATE TABLE ads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                photo TEXT,
+                description TEXT,
+                userId TEXT,
+                isPremium BOOLEAN DEFAULT 0,
+                status TEXT DEFAULT 'pending'
+            )`);
+        }
+        if (!rows.some(row => row.name === 'promo_codes')) {
+            tablesToCreate.push(`CREATE TABLE promo_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE,
+                used INTEGER DEFAULT 0
+            )`);
+        }
+        if (!rows.some(row => row.name === 'permanent_ads')) {
+            tablesToCreate.push(`CREATE TABLE permanent_ads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                photo TEXT,
+                description TEXT,
+                userId TEXT,
+                isPremium BOOLEAN DEFAULT 0
+            )`);
+        }
 
-        db.run(`CREATE TABLE IF NOT EXISTS permanent_ads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            photo TEXT,
-            description TEXT,
-            userId TEXT,
-            isPremium BOOLEAN DEFAULT 0
-        )`);
+        if (tablesToCreate.length === 0) {
+            console.log('Все таблицы уже существуют');
+            callback();
+            return;
+        }
 
-        db.run(`CREATE INDEX IF NOT EXISTS idx_userId ON ads(userId)`);
-        db.run(`CREATE INDEX IF NOT EXISTS idx_status ON ads(status)`);
-        db.run(`CREATE INDEX IF NOT EXISTS idx_code ON promo_codes(code)`);
-        db.run(`CREATE INDEX IF NOT EXISTS idx_created ON ads(id DESC)`);
-        db.run(`CREATE INDEX IF NOT EXISTS idx_permanent ON permanent_ads(id DESC)`);
-    } else {
-        console.log('Все таблицы найдены:', rows.map(row => row.name).join(', '));
-    }
+        let completed = 0;
+        tablesToCreate.forEach((sql, index) => {
+            db.run(sql, (err) => {
+                if (err) {
+                    console.error(`Ошибка создания таблицы ${tablesToCreate[index].split(' ')[2]}:`, err);
+                    process.exit(1);
+                } else {
+                    console.log(`Таблица ${tablesToCreate[index].split(' ')[2]} создана успешно`);
+                }
+                completed++;
+                if (completed === tablesToCreate.length) {
+                    createIndexes(callback);
+                }
+            });
+        });
+    });
+}
+
+function createIndexes(callback) {
+    const indexes = [
+        'CREATE INDEX IF NOT EXISTS idx_userId ON ads(userId)',
+        'CREATE INDEX IF NOT EXISTS idx_status ON ads(status)',
+        'CREATE INDEX IF NOT EXISTS idx_code ON promo_codes(code)',
+        'CREATE INDEX IF NOT EXISTS idx_created ON ads(id DESC)',
+        'CREATE INDEX IF NOT EXISTS idx_permanent ON permanent_ads(id DESC)'
+    ];
+    let completed = 0;
+    indexes.forEach((sql, index) => {
+        db.run(sql, (err) => {
+            if (err) {
+                console.error(`Ошибка создания индекса ${sql.split(' ')[5]}:`, err);
+            } else {
+                console.log(`Индекс ${sql.split(' ')[5]} создан успешно`);
+            }
+            completed++;
+            if (completed === indexes.length) {
+                callback();
+            }
+        });
+    });
+}
+
+// Инициализация базы данных при запуске
+initializeDatabase(() => {
+    console.log('База данных инициализирована');
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {
