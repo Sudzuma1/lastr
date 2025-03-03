@@ -185,7 +185,7 @@ app.get('/moderate', (req, res) => {
                         background-color: #f0f2f5;
                         color: #333;
                     }
-                    h1 {
+                    h1, h2 {
                         text-align: center;
                         color: #28a745;
                     }
@@ -287,13 +287,13 @@ app.get('/moderate', (req, res) => {
                             <img src="${ad.photo}"><br>
                             ${ad.description}<br>
                             <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>`;
-                    // Проверяем, есть ли это объявление в permanent_ads
+                    // Явно проверяем, есть ли это объявление в permanent_ads
                     db.get("SELECT * FROM permanent_ads WHERE id = ?", [ad.id], (err, permanentAd) => {
                         if (err) {
                             console.error('Ошибка проверки постоянного статуса:', err);
                             return;
                         }
-                        console.log('Проверка постоянного статуса для объявления:', { id: ad.id, isPermanent: !!permanentAd });
+                        console.log('Проверка постоянного статуса для объявления:', { id: ad.id, isPermanent: !!permanentAd, status: ad.status });
                         if (permanentAd) {
                             html += `<span class="permanent">Постоянное</span> |
                                     <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a>`;
