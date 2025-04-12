@@ -132,7 +132,7 @@ app.get('/', (req, res) => {
 
 app.get('/generate-promo', (req, res) => {
     const secret = req.query.secret;
-    if (secret !== 'mysecret123') { // Замените на свой пароль
+    if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
@@ -149,7 +149,7 @@ app.get('/generate-promo', (req, res) => {
 
 app.get('/check-db', (req, res) => {
     const secret = req.query.secret;
-    if (secret !== 'mysecret123') { // Замените на свой пароль
+    if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
@@ -168,133 +168,132 @@ app.get('/moderate', (req, res) => {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.all("SELECT * FROM ads WHERE status = 'pending' LIMIT 100", (err, rows) => {
+    db.all("SELECT * FROM ads WHERE status = 'pending' LIMIT 100", (err, pendingRows) => {
         if (err) {
+            console.error('Ошибка получения ожидающих объявлений:', err);
             res.status(500).send('Ошибка сервера');
             return;
         }
-        let html = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Модерация объявлений</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        margin: 20px;
-                        background-color: #f0f2f5;
-                        color: #333;
-                    }
-                    h1, h2 {
-                        text-align: center;
-                        color: #28a745;
-                    }
-                    ul {
-                        list-style: none;
-                        padding: 0;
-                        max-width: 800px;
-                        margin: 0 auto;
-                    }
-                    li {
-                        border: 1px solid #ccc;
-                        padding: 15px;
-                        margin-bottom: 15px;
-                        border-radius: 5px;
-                        background: white;
-                    }
-                    img {
-                        max-width: 200px;
-                        border-radius: 5px;
-                    }
-                    a {
-                        margin-right: 10px;
-                        color: #007BFF;
-                        text-decoration: none;
-                        font-weight: bold;
-                    }
-                    a:hover {
-                        text-decoration: underline;
-                    }
-                    .approve, .make-permanent, .remove-permanent {
-                        color: #28a745;
-                    }
-                    .reject {
-                        color: #dc3545;
-                    }
-                    .premium {
-                        color: gold;
-                        font-weight: bold;
-                    }
-                    .new-request {
-                        background: #ffeb3b;
-                        padding: 5px;
-                        border-radius: 3px;
-                        font-weight: bold;
-                    }
-                    .permanent {
-                        background: #4CAF50;
-                        color: white;
-                        padding: 3px 6px;
-                        border-radius: 3px;
-                        margin-left: 5px;
-                    }
-                </style>
-                <script>
-                    // Автоматическое обновление страницы каждые 10 секунд
-                    setInterval(() => {
-                        location.reload();
-                    }, 10000);
-                </script>
-            </head>
-            <body>
-                <h1>Модерация объявлений</h1>
-                <ul>`;
-        if (rows.length === 0) {
-            html += `<li style="text-align: center;">Нет объявлений на проверке</li>`;
-        } else {
-            rows.forEach(ad => {
-                html += `
-                    <li>
-                        <strong>${ad.title}</strong><br>
-                        <img src="${ad.photo}"><br>
-                        ${ad.description}<br>
-                        <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
-                        <a href="/approve/${ad.id}?secret=${secret}" class="approve">Одобрить</a> |
-                        <a href="/reject/${ad.id}?secret=${secret}" class="reject">Отклонить</a> |
-                        <a href="/make-permanent/${ad.id}?secret=${secret}" class="make-permanent">Сделать постоянным</a>
-                        <span class="new-request" id="request-${ad.id}">Новое</span>
-                    </li>`;
-            });
-        }
-        // Показываем одобренные и постоянные объявления для удобства
         db.all("SELECT * FROM ads WHERE status = 'approved' LIMIT 100", (err, approvedRows) => {
             if (err) {
                 console.error('Ошибка получения одобренных объявлений:', err);
+                res.status(500).send('Ошибка сервера');
                 return;
             }
             db.all("SELECT * FROM permanent_ads", (err, permanentRows) => {
                 if (err) {
                     console.error('Ошибка получения постоянных объявлений:', err);
+                    res.status(500).send('Ошибка сервера');
                     return;
                 }
-                if (approvedRows.length > 0 || permanentRows.length > 0) {
-                    html += `<h2>Одобренные и постоянные объявления</h2>`;
+                let html = `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>Модерация объявлений</title>
+                        <style>
+                            body {
+                                font-family: Arial, sans-serif;
+                                margin: 20px;
+                                background-color: #f0f2f5;
+                                color: #333;
+                            }
+                            h1, h2 {
+                                text-align: center;
+                                color: #28a745;
+                            }
+                            ul {
+                                list-style: none;
+                                padding: 0;
+                                max-width: 800px;
+                                margin: 0 auto;
+                            }
+                            li {
+                                border: 1px solid #ccc;
+                                padding: 15px;
+                                margin-bottom: 15px;
+                                border-radius: 5px;
+                                background: white;
+                            }
+                            img {
+                                max-width: 200px;
+                                border-radius: 5px;
+                            }
+                            a {
+                                margin-right: 10px;
+                                color: #007BFF;
+                                text-decoration: none;
+                                font-weight: bold;
+                            }
+                            a:hover {
+                                text-decoration: underline;
+                            }
+                            .approve, .make-permanent, .remove-permanent {
+                                color: #28a745;
+                            }
+                            .reject {
+                                color: #dc3545;
+                            }
+                            .premium {
+                                color: gold;
+                                font-weight: bold;
+                            }
+                            .new-request {
+                                background: #ffeb3b;
+                                padding: 5px;
+                                border-radius: 3px;
+                                font-weight: bold;
+                            }
+                            .permanent {
+                                background: #4CAF50;
+                                color: white;
+                                padding: 3px 6px;
+                                border-radius: 3px;
+                                margin-left: 5px;
+                            }
+                        </style>
+                        <script>
+                            // Автоматическое обновление страницы каждые 10 секунд
+                            setInterval(() => {
+                                location.reload();
+                            }, 10000);
+                        </script>
+                    </head>
+                    <body>
+                        <h1>Модерация объявлений</h1>
+                        <h2>Ожидающие модерации</h2>
+                        <ul>`;
+                if (pendingRows.length === 0) {
+                    html += `<li style="text-align: center;">Нет объявлений на проверке</li>`;
+                } else {
+                    pendingRows.forEach(ad => {
+                        html += `
+                            <li>
+                                <strong>${ad.title}</strong><br>
+                                <img src="${ad.photo}"><br>
+                                ${ad.description}<br>
+                                <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
+                                <a href="/approve/${ad.id}?secret=${secret}" class="approve">Одобрить</a> |
+                                <a href="/reject/${ad.id}?secret=${secret}" class="reject">Отклонить</a> |
+                                <a href="/make-permanent/${ad.id}?secret=${secret}" class="make-permanent">Сделать постоянным</a>
+                                <span class="new-request" id="request-${ad.id}">Новое</span>
+                            </li>`;
+                    });
                 }
-                approvedRows.forEach(ad => {
-                    html += `
-                        <li style="background: #e0e0e0;">
-                            <strong>${ad.title}</strong><br>
-                            <img src="${ad.photo}"><br>
-                            ${ad.description}<br>
-                            <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>`;
-                    // Явно проверяем, есть ли это объявление в permanent_ads
-                    db.get("SELECT * FROM permanent_ads WHERE id = ?", [ad.id], (err, permanentAd) => {
-                        if (err) {
-                            console.error('Ошибка проверки постоянного статуса:', err);
-                            return;
-                        }
-                        console.log('Проверка постоянного статуса для объявления:', { id: ad.id, isPermanent: !!permanentAd, status: ad.status });
-                        if (permanentAd) {
+                html += `</ul><h2>Одобренные и постоянные объявления</h2><ul>`;
+                if (approvedRows.length === 0 && permanentRows.length === 0) {
+                    html += `<li style="text-align: center;">Нет одобренных или постоянных объявлений</li>`;
+                } else {
+                    approvedRows.forEach(ad => {
+                        const isPermanent = permanentRows.some(p => p.id === ad.id);
+                        console.log('Объявление в списке одобренных:', { id: ad.id, status: ad.status, isPermanent });
+                        html += `
+                            <li style="background: #e0e0e0;">
+                                <strong>${ad.title}</strong><br>
+                                <img src="${ad.photo}"><br>
+                                ${ad.description}<br>
+                                <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>`;
+                        if (isPermanent) {
                             html += `<span class="permanent">Постоянное</span> |
                                     <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a>`;
                         } else {
@@ -302,20 +301,22 @@ app.get('/moderate', (req, res) => {
                         }
                         html += `</li>`;
                     });
-                });
-                permanentRows.forEach(ad => {
-                    if (!approvedRows.some(row => row.id === ad.id)) {
-                        html += `
-                            <li style="background: #e0e0e0;">
-                                <strong>${ad.title}</strong><br>
-                                <img src="${ad.photo}"><br>
-                                ${ad.description}<br>
-                                <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
-                                <span class="permanent">Постоянное</span> |
-                                <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a>
-                            </li>`;
-                    }
-                });
+                    permanentRows.forEach(ad => {
+                        if (!approvedRows.some(row => row.id === ad.id)) {
+                            console.log('Объявление только в permanent_ads:', { id: ad.id });
+                            html += `
+                                <li style="background: #e0e0e0;">
+                                    <strong>${ad.title}</strong><br>
+                                    <img src="${ad.photo}"><br>
+                                    ${ad.description}<br>
+                                    <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
+                                    <span class="permanent">Постоянное</span> |
+                                    <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a>
+                                </li>`;
+                        }
+                    });
+                }
+                html += `</ul></body></html>`;
                 res.send(html);
             });
         });
@@ -334,24 +335,22 @@ app.get('/approve/:id', (req, res) => {
             res.status(500).send('Объявление не найдено');
             return;
         }
-        // Логируем текущее состояние перед обновлением
         console.log('Состояние объявления перед одобрением:', { id: req.params.id, status: ad.status });
-        db.run("UPDATE ads SET status = 'approved' WHERE id = ?", [req.params.id], (err) => {
+        db.run("UPDATE ads SET status = 'approved' WHERE id = ?", [req.params.id], function(err) {
             if (err) {
                 console.error('Ошибка одобрения объявления:', err);
                 res.status(500).send('Ошибка сервера');
                 return;
             }
-            // Проверяем, обновился ли статус в базе
-            db.get("SELECT status FROM ads WHERE id = ?", [req.params.id], (err, updatedAd) => {
+            console.log('Объявление одобрено:', { id: req.params.id, rowsAffected: this.changes });
+            db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, updatedAd) => {
                 if (err) {
                     console.error('Ошибка проверки обновлённого статуса:', err);
                     res.status(500).send('Ошибка проверки статуса');
                     return;
                 }
-                console.log('Объявление одобрено, новый статус:', { id: req.params.id, status: updatedAd.status });
-                // Убедимся, что одобренное объявление отображается в модерации как одобренное
-                io.emit('new-ad', { ...ad, status: 'approved' });
+                console.log('Объявление после одобрения:', { id: req.params.id, status: updatedAd.status });
+                io.emit('new-ad', { ...updatedAd, status: 'approved' });
                 res.redirect('/moderate?secret=mysecret123');
             });
         });
@@ -390,13 +389,11 @@ app.get('/make-permanent/:id', (req, res) => {
             res.status(404).send('Объявление не найдено');
             return;
         }
-        // Проверяем, одобрено ли объявление, с отладкой
         console.log('Проверка статуса для постоянного:', { id: req.params.id, status: ad.status });
         if (ad.status !== 'approved') {
             res.status(400).send('Объявление должно быть одобрено');
             return;
         }
-        // Проверяем, уже ли оно постоянное
         db.get("SELECT * FROM permanent_ads WHERE id = ?", [ad.id], (err, permanentAd) => {
             if (err) {
                 console.error('Ошибка проверки постоянного объявления:', err);
@@ -445,7 +442,6 @@ function resetAds() {
     db.run("DELETE FROM ads WHERE status = 'approved'", (err) => {
         if (err) console.error('Ошибка при сбросе объявлений:', err);
         else console.log('Объявления сброшены');
-        // Загружаем постоянные объявления
         db.all("SELECT * FROM permanent_ads", (err, permanentRows) => {
             if (err) {
                 console.error('Ошибка загрузки постоянных объявлений:', err);
@@ -466,7 +462,6 @@ setInterval(() => {
 io.on('connection', (socket) => {
     console.log('Пользователь подключен:', socket.id);
 
-    // Загружаем как временные, так и постоянные объявления
     db.all("SELECT * FROM ads WHERE status = 'approved' LIMIT 100", (err, tempRows) => {
         if (err) {
             console.error('Ошибка получения временных объявлений:', err);
@@ -480,8 +475,8 @@ io.on('connection', (socket) => {
                 return;
             }
             const allAds = [...tempRows, ...permanentRows].sort((a, b) => b.isPremium - a.isPremium);
-            console.log('Отправлены объявления:', allAds.length); // Отладка
-            socket.emit('initial-ads', allAds.slice(0, 100)); // Ограничиваем до 100
+            console.log('Отправлены объявления:', allAds.length);
+            socket.emit('initial-ads', allAds.slice(0, 100));
         });
     });
 
@@ -489,9 +484,9 @@ io.on('connection', (socket) => {
 
     socket.on('new-ad', (ad, callback) => {
         const { title, photo, description, userId, promoCode } = ad;
-        console.log('Получено фото размером:', photo ? photo.length / 1024 : 0, 'KB'); // Размер в KB
+        console.log('Получено фото размером:', photo ? photo.length / 1024 : 0, 'KB');
 
-        if (photo && photo.length > 2097152) { // 2 MB в Base64
+        if (photo && photo.length > 2097152) {
             callback({ success: false, message: 'Фото слишком большое! Максимум 2 MB. Сжмите изображение.' });
             return;
         }
@@ -571,19 +566,10 @@ function saveAd(title, photo, description, userId, isPremium, callback) {
                 callback({ success: false, message: 'Ошибка сервера' });
                 return;
             }
-            // Уведомляем модератора о новом запросе
             io.emit('new-pending-ad', this.lastID);
             callback({ success: true });
         }
     );
-}
-
-function getAdById(id) {
-    return new Promise((resolve) => {
-        db.get("SELECT * FROM ads WHERE id = ?", [id], (err, row) => {
-            resolve(row || {});
-        });
-    });
 }
 
 const PORT = process.env.PORT || 10000;
