@@ -1,193 +1,385 @@
-<!DOCTYPE html>
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row =>
+                    row.some(cell => cell !== '' && cell !== null && cell !== undefined)
+                );
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Городская поляна</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: Arial, sans-serif;
+        * {
             margin: 0;
             padding: 0;
-            background-color: #f0f2f5;
-            color: #333;
+            box-sizing: border-box;
         }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #e0f7fa 0%, #fffde7 100%);
+            color: #2d3436;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
         header {
-            background-color: #28a745;
+            background: linear-gradient(90deg, #00c853 0%, #00e676 100%);
             color: white;
-            padding: 15px;
+            padding: 1.5rem;
             text-align: center;
-            font-size: 1.5rem;
+            font-size: 2rem;
+            font-weight: 700;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            animation: slideDown 0.5s ease-in-out;
         }
+
+        @keyframes slideDown {
+            from { transform: translateY(-100%); }
+            to { transform: translateY(0); }
+        }
+
+        .notice {
+            text-align: center;
+            color: #636e72;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 1rem;
+            margin: 1rem auto;
+            max-width: 90%;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            font-size: 0.9rem;
+            animation: fadeIn 1s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
         main {
-            padding: 10px;
+            padding: 2rem;
             max-width: 1200px;
             margin: 0 auto;
         }
+
         .ad-form, .promo-form {
             background: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
+            padding: 2rem;
+            border-radius: 16px;
+            margin-bottom: 2rem;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            animation: slideUp 0.5s ease-in-out;
         }
-        .ad-form input, .ad-form textarea, .ad-form button, .promo-form button {
+
+        @keyframes slideUp {
+            from { transform: translateY(50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .ad-form:hover, .promo-form:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .ad-form input, .ad-form textarea, .promo-form input {
             width: 100%;
-            padding: 8px;
-            margin-bottom: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box;
+            padding: 0.8rem;
+            margin-bottom: 1rem;
+            border: 2px solid #dfe6e9;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
         }
+
+        .ad-form input:focus, .ad-form textarea:focus, .promo-form input:focus {
+            border-color: #00e676;
+            box-shadow: 0 0 8px rgba(0, 230, 118, 0.3);
+            outline: none;
+        }
+
+        .ad-form textarea {
+            resize: none;
+            height: 100px;
+        }
+
         .ad-form button, .promo-form button {
-            background: #28a745;
+            width: 100%;
+            padding: 0.8rem;
+            background: linear-gradient(90deg, #00c853 0%, #00e676 100%);
             color: white;
             border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
             cursor: pointer;
+            transition: background 0.3s ease, transform 0.2s ease;
         }
+
         .ad-form button:hover, .promo-form button:hover {
-            background: #218838;
+            background: linear-gradient(90deg, #00b140 0%, #00c853 100%);
+            transform: scale(1.02);
         }
+
+        .promo-form {
+            text-align: center;
+            background: #fffde7;
+        }
+
+        .promo-form h3 {
+            color: #2d3436;
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .promo-form p {
+            color: #636e72;
+            font-size: 1rem;
+        }
+
         .ad-grid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+            padding: 1rem 0;
         }
+
         .ad {
             background: white;
-            padding: 8px;
-            border-radius: 8px;
-            width: 300px;
+            padding: 1rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            animation: fadeIn 0.5s ease-in-out;
         }
+
+        .ad:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+
         .ad.premium {
-            border: 2px solid gold;
+            border: 3px solid #f1c40f;
             background: #fffde7;
             position: relative;
         }
+
         .ad.premium::before {
             content: "Премиум";
             display: block;
-            background: gold;
-            color: black;
-            font-weight: bold;
-            padding: 4px;
+            background: #f1c40f;
+            color: #2d3436;
+            font-weight: 600;
+            padding: 0.5rem;
             text-align: center;
-            border-radius: 4px 4px 0 0;
-            margin: -8px -8px 8px -8px;
+            border-radius: 12px 12px 0 0;
+            margin: -1rem -1rem 1rem -1rem;
         }
+
         .ad img {
             width: 100%;
-            height: 150px;
+            height: 160px;
             object-fit: cover;
-            border-radius: 4px;
+            border-radius: 12px;
+            margin-bottom: 0.5rem;
         }
+
         .ad h3 {
-            font-size: 0.9rem;
-            margin: 5px 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #2d3436;
         }
+
         .ad p {
-            font-size: 0.7rem;
-            color: #666;
+            font-size: 0.9rem;
+            color: #636e72;
+            margin-bottom: 0.5rem;
         }
+
         .ad button {
-            background: #dc3545;
+            width: 100%;
+            padding: 0.5rem;
+            background: #e74c3c;
             color: white;
             border: none;
-            padding: 5px;
-            border-radius: 4px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
             cursor: pointer;
-            font-size: 0.7rem;
+            transition: background 0.3s ease, transform 0.2s ease;
         }
+
         .ad button:hover {
-            background: #c82333;
+            background: #c0392b;
+            transform: scale(1.02);
         }
+
+        #countdown {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            margin: 1rem auto;
+            max-width: 300px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            font-size: 1rem;
+            color: #2d3436;
+        }
+
         footer {
             text-align: center;
-            padding: 15px;
-            color: #666;
-            margin-top: 15px;
+            padding: 1.5rem;
+            color: #636e72;
+            font-size: 0.9rem;
+            background: rgba(255, 255, 255, 0.5);
         }
+
         .loading {
             text-align: center;
             display: none;
-            margin: 15px 0;
-        }
-        .whatsapp-link {
-            position: fixed;
-            bottom: 15px;
-            right: 15px;
-            background: #25D366;
-            color: white;
-            padding: 12px;
-            border-radius: 50%;
-            text-decoration: none;
-            font-size: 1.2rem;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-        }
-        .whatsapp-link:hover {
-            background: #1da851;
-        }
-        #countdown {
-            text-align: center;
-            padding: 8px;
-            background: #fff;
-            border-radius: 4px;
-            margin: 15px auto;
-            max-width: 250px;
+            margin: 1rem 0;
+            font-size: 1rem;
+            color: #636e72;
+            animation: pulse 1.5s infinite;
         }
 
-        /* Адаптив для мобильных устройств (экран до 768px, типичный размер телефона) */
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .whatsapp-link {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #25D366;
+            color: white;
+            padding: 1rem;
+            border-radius: 50%;
+            text-decoration: none;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            transition: background 0.3s ease, transform 0.3s ease;
+        }
+
+        .whatsapp-link:hover {
+            background: #1da851;
+            transform: scale(1.1);
+        }
+
+        .notification {
+            background: #00e676;
+            color: white;
+            padding: 1rem;
+            border-radius: 12px;
+            margin: 1rem 0;
+            display: none;
+            text-align: center;
+            font-size: 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        /* Адаптивность */
         @media screen and (max-width: 768px) {
+            header {
+                font-size: 1.5rem;
+                padding: 1rem;
+            }
+
+            main {
+                padding: 1rem;
+            }
+
+            .ad-form, .promo-form {
+                padding: 1.5rem;
+            }
+
             .ad-grid {
-                gap: 8px;
-                justify-content: center;
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 1rem;
             }
+
             .ad {
-                width: 150px; /* Две карточки в ряд */
-                padding: 6px;
+                padding: 0.8rem;
             }
+
             .ad img {
                 height: 100px;
             }
-            .ad h3 {
-                font-size: 0.7rem;
-            }
-            .ad p {
-                font-size: 0.6rem;
-            }
-            .ad button {
-                padding: 3px;
-                font-size: 0.6rem;
-            }
-            main {
-                padding: 5px;
-            }
-            .ad-form, .promo-form {
-                padding: 10px;
-            }
-            header {
-                padding: 10px;
-                font-size: 1.2rem;
-            }
-            footer {
-                padding: 10px;
-            }
-        }
 
-        /* Стили для уведомления */
-        .notification {
-            background: #28a745;
-            color: white;
-            padding: 8px;
-            border-radius: 4px;
-            margin: 8px 0;
-            display: none;
-            text-align: center;
+            .ad h3 {
+                font-size: 0.9rem;
+            }
+
+            .ad p {
+                font-size: 0.8rem;
+            }
+
+            .ad button {
+                padding: 0.4rem;
+                font-size: 0.8rem;
+            }
+
+            .notice {
+                font-size: 0.8rem;
+                padding: 0.8rem;
+            }
+
+            #countdown {
+                font-size: 0.9rem;
+                padding: 0.8rem;
+            }
+
+            footer {
+                padding: 1rem;
+                font-size: 0.8rem;
+            }
+
+            .whatsapp-link {
+                padding: 0.8rem;
+                font-size: 1.2rem;
+                bottom: 15px;
+                right: 15px;
+            }
         }
     </style>
 </head>
 <body>
     <header>Городская поляна</header>
-    <div style="text-align: center; color: #666; margin: 15px; background: #fff; padding: 8px; border-radius: 4px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);">
+    <div class="notice">
         Тестовая версия. Загрузка может быть медленной (5-10 сек). Фото < 2 MB, сжимайте.
     </div>
     <main>
@@ -283,7 +475,7 @@
         });
 
         socket.on('new-ad', (ad) => {
-            console.log('Новое объявление:', ad); // Отладка
+            console.log('Новое объявление:', ad);
             const adElement = createAdElement(ad);
             if (ad.isPremium && ad.userId === userId) {
                 adGrid.prepend(adElement);
@@ -295,7 +487,7 @@
         });
 
         socket.on('initial-ads', (ads) => {
-            console.log('Получены объявления:', ads.length); // Отладка
+            console.log('Получены объявления:', ads.length);
             adGrid.innerHTML = '';
             ads.sort((a, b) => b.isPremium - a.isPremium);
             ads.forEach(ad => adGrid.appendChild(createAdElement(ad)));
