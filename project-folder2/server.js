@@ -29,14 +29,32 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
+// Промисы для работы с SQLite
+const dbAll = (sql, params = []) => new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+    });
+});
+
+const dbGet = (sql, params = []) => new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+    });
+});
+
+const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+        if (err) reject(err);
+        else resolve({ changes: this.changes });
+    });
+});
+
 // Создание таблиц с проверкой и отладкой
-function initializeDatabase(callback) {
-    db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes", "permanent_ads")', (err, rows) => {
-        if (err) {
-            console.error('Ошибка проверки существующих таблиц:', err);
-            process.exit(1);
-            return;
-        }
+async function initializeDatabase() {
+    try {
+        const rows = await dbAll('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes", "permanent_ads")');
         console.log('Найденные таблицы:', rows.map(row => row.name).join(', '));
 
         const tablesToCreate = [];
@@ -71,29 +89,22 @@ function initializeDatabase(callback) {
 
         if (tablesToCreate.length === 0) {
             console.log('Все таблицы уже существуют');
-            callback();
+            await createIndexes();
             return;
         }
 
-        let completed = 0;
-        tablesToCreate.forEach((sql, index) => {
-            db.run(sql, (err) => {
-                if (err) {
-                    console.error(`Ошибка создания таблицы ${tablesToCreate[index].split(' ')[2]}:`, err);
-                    process.exit(1);
-                } else {
-                    console.log(`Таблица ${tablesToCreate[index].split(' ')[2]} создана успешно`);
-                }
-                completed++;
-                if (completed === tablesToCreate.length) {
-                    createIndexes(callback);
-                }
-            });
-        });
-    });
+        for (const sql of tablesToCreate) {
+            await dbRun(sql);
+            console.log(`Таблица ${sql.split(' ')[2]} создана успешно`);
+        }
+        await createIndexes();
+    } catch (err) {
+        console.error('Ошибка инициализации базы:', err);
+        process.exit(1);
+    }
 }
 
-function createIndexes(callback) {
+async function createIndexes() {
     const indexes = [
         'CREATE INDEX IF NOT EXISTS idx_userId ON ads(userId)',
         'CREATE INDEX IF NOT EXISTS idx_status ON ads(status)',
@@ -101,24 +112,18 @@ function createIndexes(callback) {
         'CREATE INDEX IF NOT EXISTS idx_created ON ads(id DESC)',
         'CREATE INDEX IF NOT EXISTS idx_permanent ON permanent_ads(id DESC)'
     ];
-    let completed = 0;
-    indexes.forEach((sql, index) => {
-        db.run(sql, (err) => {
-            if (err) {
-                console.error(`Ошибка создания индекса ${sql.split(' ')[5]}:`, err);
-            } else {
-                console.log(`Индекс ${sql.split(' ')[5]} создан успешно`);
-            }
-            completed++;
-            if (completed === indexes.length) {
-                callback();
-            }
-        });
-    });
+    for (const sql of indexes) {
+        try {
+            await dbRun(sql);
+            console.log(`Индекс ${sql.split(' ')[5]} создан успешно`);
+        } catch (err) {
+            console.error(`Ошибка создания индекса ${sql.split(' ')[5]}:`, err);
+        }
+    }
 }
 
 // Инициализация базы данных при запуске
-initializeDatabase(() => {
+initializeDatabase().then(() => {
     console.log('База данных инициализирована');
 });
 
@@ -130,261 +135,241 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/generate-promo', (req, res) => {
+app.get('/generate-promo', async (req, res) => {
     const secret = req.query.secret;
     if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
     const promoCode = 'PREMIUM_' + Math.random().toString(36).substr(2, 8).toUpperCase();
-    db.run('INSERT INTO promo_codes (code) VALUES (?)', [promoCode], (err) => {
-        if (err) {
-            console.error('Ошибка при сохранении промокода:', err);
-            res.status(500).send('Ошибка сервера');
-            return;
-        }
+    try {
+        await dbRun('INSERT INTO promo_codes (code) VALUES (?)', [promoCode]);
         res.send(`Ваш промокод: ${promoCode}`);
-    });
+    } catch (err) {
+        console.error('Ошибка при сохранении промокода:', err);
+        res.status(500).send('Ошибка сервера');
+    }
 });
 
-app.get('/check-db', (req, res) => {
+app.get('/check-db', async (req, res) => {
     const secret = req.query.secret;
     if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.all('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes", "permanent_ads")', (err, rows) => {
-        if (err) {
-            res.status(500).send('Ошибка проверки базы: ' + err.message);
-            return;
-        }
+    try {
+        const rows = await dbAll('SELECT name FROM sqlite_master WHERE type="table" AND name IN ("ads", "promo_codes", "permanent_ads")');
         res.send(`Таблицы в базе:<br>${JSON.stringify(rows, null, 2).replace(/\n/g, '<br>')}`);
-    });
+    } catch (err) {
+        res.status(500).send('Ошибка проверки базы: ' + err.message);
+    }
 });
 
-app.get('/moderate', (req, res) => {
+app.get('/moderate', async (req, res) => {
     const secret = req.query.secret;
     if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.all("SELECT * FROM ads WHERE status = 'pending' LIMIT 100", (err, pendingRows) => {
-        if (err) {
-            console.error('Ошибка получения ожидающих объявлений:', err);
-            res.status(500).send('Ошибка сервера');
-            return;
-        }
-        db.all("SELECT * FROM ads WHERE status = 'approved' LIMIT 100", (err, approvedRows) => {
-            if (err) {
-                console.error('Ошибка получения одобренных объявлений:', err);
-                res.status(500).send('Ошибка сервера');
-                return;
-            }
-            db.all("SELECT * FROM permanent_ads", (err, permanentRows) => {
-                if (err) {
-                    console.error('Ошибка получения постоянных объявлений:', err);
-                    res.status(500).send('Ошибка сервера');
-                    return;
-                }
-                let html = `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <title>Модерация объявлений</title>
-                        <style>
-                            body {
-                                font-family: Arial, sans-serif;
-                                margin: 20px;
-                                background-color: #f0f2f5;
-                                color: #333;
-                            }
-                            h1, h2 {
-                                text-align: center;
-                                color: #28a745;
-                            }
-                            ul {
-                                list-style: none;
-                                padding: 0;
-                                max-width: 800px;
-                                margin: 0 auto;
-                            }
-                            li {
-                                border: 1px solid #ccc;
-                                padding: 15px;
-                                margin-bottom: 15px;
-                                border-radius: 5px;
-                                background: white;
-                            }
-                            img {
-                                max-width: 200px;
-                                border-radius: 5px;
-                            }
-                            a {
-                                margin-right: 10px;
-                                color: #007BFF;
-                                text-decoration: none;
-                                font-weight: bold;
-                            }
-                            a:hover {
-                                text-decoration: underline;
-                            }
-                            .approve, .make-permanent, .remove-permanent {
-                                color: #28a745;
-                            }
-                            .reject {
-                                color: #dc3545;
-                            }
-                            .premium {
-                                color: gold;
-                                font-weight: bold;
-                            }
-                            .new-request {
-                                background: #ffeb3b;
-                                padding: 5px;
-                                border-radius: 3px;
-                                font-weight: bold;
-                            }
-                            .permanent {
-                                background: #4CAF50;
-                                color: white;
-                                padding: 3px 6px;
-                                border-radius: 3px;
-                                margin-left: 5px;
-                            }
-                        </style>
-                        <script>
-                            // Автоматическое обновление страницы каждые 10 секунд
-                            setInterval(() => {
-                                location.reload();
-                            }, 10000);
-                        </script>
-                    </head>
-                    <body>
-                        <h1>Модерация объявлений</h1>
-                        <h2>Ожидающие модерации</h2>
-                        <ul>`;
-                if (pendingRows.length === 0) {
-                    html += `<li style="text-align: center;">Нет объявлений на проверке</li>`;
-                } else {
-                    pendingRows.forEach(ad => {
-                        html += `
-                            <li>
-                                <strong>${ad.title}</strong><br>
-                                <img src="${ad.photo}"><br>
-                                ${ad.description}<br>
-                                <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
-                                <a href="/approve/${ad.id}?secret=${secret}" class="approve">Одобрить</a> |
-                                <a href="/reject/${ad.id}?secret=${secret}" class="reject">Отклонить</a> |
-                                <a href="/make-permanent/${ad.id}?secret=${secret}" class="make-permanent">Сделать постоянным</a>
-                                <span class="new-request" id="request-${ad.id}">Новое</span>
-                            </li>`;
-                    });
-                }
-                html += `</ul><h2>Одобренные и постоянные объявления</h2><ul>`;
-                if (approvedRows.length === 0 && permanentRows.length === 0) {
-                    html += `<li style="text-align: center;">Нет одобренных или постоянных объявлений</li>`;
-                } else {
-                    approvedRows.forEach(ad => {
-                        const isPermanent = permanentRows.some(p => p.id === ad.id);
-                        console.log('Объявление в списке одобренных:', { id: ad.id, status: ad.status, isPermanent });
-                        html += `
-                            <li style="background: #e0e0e0;">
-                                <strong>${ad.title}</strong><br>
-                                <img src="${ad.photo}"><br>
-                                ${ad.description}<br>
-                                <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>`;
-                        if (isPermanent) {
-                            html += `<span class="permanent">Постоянное</span> |
-                                    <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a>`;
-                        } else {
-                            html += `<a href="/make-permanent/${ad.id}?secret=${secret}" class="make-permanent">Сделать постоянным</a>`;
-                        }
-                        html += `</li>`;
-                    });
-                    permanentRows.forEach(ad => {
-                        if (!approvedRows.some(row => row.id === ad.id)) {
-                            console.log('Объявление только в permanent_ads:', { id: ad.id });
-                            html += `
-                                <li style="background: #e0e0e0;">
-                                    <strong>${ad.title}</strong><br>
-                                    <img src="${ad.photo}"><br>
-                                    ${ad.description}<br>
-                                    <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
-                                    <span class="permanent">Постоянное</span> |
-                                    <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a>
-                                </li>`;
-                        }
-                    });
-                }
-                html += `</ul></body></html>`;
-                res.send(html);
-            });
+    try {
+        const pendingRows = await dbAll("SELECT * FROM ads WHERE status = 'pending' LIMIT 100");
+        const approvedRows = await dbAll("SELECT * FROM ads WHERE status = 'approved' LIMIT 100");
+        const permanentRows = await dbAll("SELECT * FROM permanent_ads");
+
+        console.log('Данные для /moderate:', {
+            pendingCount: pendingRows.length,
+            approvedCount: approvedRows.length,
+            permanentCount: permanentRows.length
         });
-    });
+
+        let html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Модерация объявлений</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        margin: 20px;
+                        background-color: #f0f2f5;
+                        color: #333;
+                    }
+                    h1, h2 {
+                        text-align: center;
+                        color: #28a745;
+                    }
+                    ul {
+                        list-style: none;
+                        padding: 0;
+                        max-width: 800px;
+                        margin: 0 auto;
+                    }
+                    li {
+                        border: 1px solid #ccc;
+                        padding: 15px;
+                        margin-bottom: 15px;
+                        border-radius: 5px;
+                        background: white;
+                    }
+                    img {
+                        max-width: 200px;
+                        border-radius: 5px;
+                    }
+                    a {
+                        margin-right: 10px;
+                        color: #007BFF;
+                        text-decoration: none;
+                        font-weight: bold;
+                    }
+                    a:hover {
+                        text-decoration: underline;
+                    }
+                    .approve, .make-permanent, .remove-permanent {
+                        color: #28a745;
+                    }
+                    .reject, .delete {
+                        color: #dc3545;
+                    }
+                    .premium {
+                        color: gold;
+                        font-weight: bold;
+                    }
+                    .new-request {
+                        background: #ffeb3b;
+                        padding: 5px;
+                        border-radius: 3px;
+                        font-weight: bold;
+                    }
+                    .permanent {
+                        background: #4CAF50;
+                        color: white;
+                        padding: 3px 6px;
+                        border-radius: 3px;
+                        margin-left: 5px;
+                    }
+                </style>
+                <script>
+                    setInterval(() => {
+                        location.reload();
+                    }, 10000);
+                </script>
+            </head>
+            <body>
+                <h1>Модерация объявлений</h1>
+                <h2>Ожидающие модерации</h2>
+                <ul>`;
+        if (pendingRows.length === 0) {
+            html += `<li style="text-align: center;">Нет объявлений на проверке</li>`;
+        } else {
+            pendingRows.forEach(ad => {
+                html += `
+                    <li>
+                        <strong>${ad.title}</strong><br>
+                        <img src="${ad.photo}"><br>
+                        ${ad.description}<br>
+                        <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
+                        <a href="/approve/${ad.id}?secret=${secret}" class="approve">Одобрить</a> |
+                        <a href="/reject/${ad.id}?secret=${secret}" class="reject">Отклонить</a> |
+                        <a href="/make-permanent/${ad.id}?secret=${secret}" class="make-permanent">Сделать постоянным</a>
+                        <span class="new-request" id="request-${ad.id}">Новое</span>
+                    </li>`;
+            });
+        }
+        html += `</ul><h2>Одобренные и постоянные объявления</h2><ul>`;
+        if (approvedRows.length === 0 && permanentRows.length === 0) {
+            html += `<li style="text-align: center;">Нет одобренных или постоянных объявлений</li>`;
+        } else {
+            approvedRows.forEach(ad => {
+                const isPermanent = permanentRows.some(p => p.id === ad.id);
+                console.log('Объявление в списке одобренных:', { id: ad.id, status: ad.status, isPermanent });
+                html += `
+                    <li style="background: #e0e0e0;">
+                        <strong>${ad.title}</strong><br>
+                        <img src="${ad.photo}"><br>
+                        ${ad.description}<br>
+                        <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>`;
+                if (isPermanent) {
+                    html += `<span class="permanent">Постоянное</span> |
+                            <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a> |`;
+                } else {
+                    html += `<a href="/make-permanent/${ad.id}?secret=${secret}" class="make-permanent">Сделать постоянным</a> |`;
+                }
+                html += `<a href="/delete-ad/${ad.id}?secret=${secret}" class="delete">Удалить</a></li>`;
+            });
+            permanentRows.forEach(ad => {
+                if (!approvedRows.some(row => row.id === ad.id)) {
+                    console.log('Объявление только в permanent_ads:', { id: ad.id });
+                    html += `
+                        <li style="background: #e0e0e0;">
+                            <strong>${ad.title}</strong><br>
+                            <img src="${ad.photo}"><br>
+                            ${ad.description}<br>
+                            <span class="premium">Премиум: ${ad.isPremium ? 'Да' : 'Нет'}</span><br>
+                            <span class="permanent">Постоянное</span> |
+                            <a href="/remove-permanent/${ad.id}?secret=${secret}" class="remove-permanent">Отключить постоянный</a> |
+                            <a href="/delete-ad/${ad.id}?secret=${secret}" class="delete">Удалить</a>
+                        </li>`;
+                }
+            });
+        }
+        html += `</ul></body></html>`;
+        res.send(html);
+    } catch (err) {
+        console.error('Ошибка в /moderate:', err);
+        res.status(500).send('Ошибка сервера');
+    }
 });
 
-app.get('/approve/:id', (req, res) => {
+app.get('/approve/:id', async (req, res) => {
     const secret = req.query.secret;
     if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, ad) => {
-        if (err || !ad) {
-            console.error('Объявление не найдено при одобрении:', err || 'Нет данных');
-            res.status(500).send('Объявление не найдено');
+    try {
+        const ad = await dbGet("SELECT * FROM ads WHERE id = ?", [req.params.id]);
+        if (!ad) {
+            console.error('Объявление не найдено при одобрении:', { id: req.params.id });
+            res.status(404).send('Объявление не найдено');
             return;
         }
         console.log('Состояние объявления перед одобрением:', { id: req.params.id, status: ad.status });
-        db.run("UPDATE ads SET status = 'approved' WHERE id = ?", [req.params.id], function(err) {
-            if (err) {
-                console.error('Ошибка одобрения объявления:', err);
-                res.status(500).send('Ошибка сервера');
-                return;
-            }
-            console.log('Объявление одобрено:', { id: req.params.id, rowsAffected: this.changes });
-            db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, updatedAd) => {
-                if (err) {
-                    console.error('Ошибка проверки обновлённого статуса:', err);
-                    res.status(500).send('Ошибка проверки статуса');
-                    return;
-                }
-                console.log('Объявление после одобрения:', { id: req.params.id, status: updatedAd.status });
-                io.emit('new-ad', { ...updatedAd, status: 'approved' });
-                res.redirect('/moderate?secret=mysecret123');
-            });
-        });
-    });
-});
-
-app.get('/reject/:id', (req, res) => {
-    const secret = req.query.secret;
-    if (secret !== 'mysecret123') {
-        res.status(403).send('Доступ запрещён');
-        return;
-    }
-    db.run("DELETE FROM ads WHERE id = ?", [req.params.id], (err) => {
-        if (err) {
-            console.error('Ошибка отклонения объявления:', err);
-            res.status(500).send('Ошибка сервера');
-            return;
-        }
+        const result = await dbRun("UPDATE ads SET status = 'approved' WHERE id = ?", [req.params.id]);
+        console.log('Объявление одобрено:', { id: req.params.id, rowsAffected: result.changes });
+        const updatedAd = await dbGet("SELECT * FROM ads WHERE id = ?", [req.params.id]);
+        console.log('Объявление после одобрения:', { id: req.params.id, status: updatedAd.status });
+        io.emit('new-ad', { ...updatedAd, status: 'approved' });
         res.redirect('/moderate?secret=mysecret123');
-    });
+    } catch (err) {
+        console.error('Ошибка в /approve:', err);
+        res.status(500).send('Ошибка сервера');
+    }
 });
 
-app.get('/make-permanent/:id', (req, res) => {
+app.get('/reject/:id', async (req, res) => {
     const secret = req.query.secret;
     if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.get("SELECT * FROM ads WHERE id = ?", [req.params.id], (err, ad) => {
-        if (err) {
-            console.error('Ошибка получения объявления для постоянного статуса:', err);
-            res.status(500).send('Ошибка сервера');
-            return;
-        }
+    try {
+        await dbRun("DELETE FROM ads WHERE id = ?", [req.params.id]);
+        console.log('Объявление отклонено и удалено:', { id: req.params.id });
+        res.redirect('/moderate?secret=mysecret123');
+    } catch (err) {
+        console.error('Ошибка в /reject:', err);
+        res.status(500).send('Ошибка сервера');
+    }
+});
+
+app.get('/make-permanent/:id', async (req, res) => {
+    const secret = req.query.secret;
+    if (secret !== 'mysecret123') {
+        res.status(403).send('Доступ запрещён');
+        return;
+    }
+    try {
+        const ad = await dbGet("SELECT * FROM ads WHERE id = ?", [req.params.id]);
         if (!ad) {
             res.status(404).send('Объявление не найдено');
             return;
@@ -394,45 +379,70 @@ app.get('/make-permanent/:id', (req, res) => {
             res.status(400).send('Объявление должно быть одобрено');
             return;
         }
-        db.get("SELECT * FROM permanent_ads WHERE id = ?", [ad.id], (err, permanentAd) => {
-            if (err) {
-                console.error('Ошибка проверки постоянного объявления:', err);
-                res.status(500).send('Ошибка сервера');
-                return;
-            }
-            if (permanentAd) {
-                res.status(400).send('Объявление уже постоянное');
-                return;
-            }
-            db.run('INSERT INTO permanent_ads (id, title, photo, description, userId, isPremium) VALUES (?, ?, ?, ?, ?, ?)',
-                [ad.id, ad.title, ad.photo, ad.description, ad.userId, ad.isPremium], (err) => {
-                    if (err) {
-                        console.error('Ошибка сохранения постоянного объявления:', err);
-                        res.status(500).send('Ошибка сохранения постоянного объявления');
-                        return;
-                    }
-                    console.log('Объявление сделано постоянным:', ad.id);
-                    res.redirect('/moderate?secret=mysecret123');
-                });
-        });
-    });
+        const permanentAd = await dbGet("SELECT * FROM permanent_ads WHERE id = ?", [ad.id]);
+        if (permanentAd) {
+            res.status(400).send('Объявление уже постоянное');
+            return;
+        }
+        await dbRun('INSERT INTO permanent_ads (id, title, photo, description, userId, isPremium) VALUES (?, ?, ?, ?, ?, ?)',
+            [ad.id, ad.title, ad.photo, ad.description, ad.userId, ad.isPremium]);
+        console.log('Объявление сделано постоянным:', ad.id);
+        res.redirect('/moderate?secret=mysecret123');
+    } catch (err) {
+        console.error('Ошибка в /make-permanent:', err);
+        res.status(500).send('Ошибка сервера');
+    }
 });
 
-app.get('/remove-permanent/:id', (req, res) => {
+app.get('/remove-permanent/:id', async (req, res) => {
     const secret = req.query.secret;
     if (secret !== 'mysecret123') {
         res.status(403).send('Доступ запрещён');
         return;
     }
-    db.run('DELETE FROM permanent_ads WHERE id = ?', [req.params.id], (err) => {
-        if (err) {
-            console.error('Ошибка удаления постоянного объявления:', err);
-            res.status(500).send('Ошибка удаления постоянного объявления');
-            return;
-        }
+    try {
+        await dbRun('DELETE FROM permanent_ads WHERE id = ?', [req.params.id]);
         console.log('Постоянное объявление удалено:', req.params.id);
         res.redirect('/moderate?secret=mysecret123');
-    });
+    } catch (err) {
+        console.error('Ошибка в /remove-permanent:', err);
+        res.status(500).send('Ошибка сервера');
+    }
+});
+
+app.get('/delete-ad/:id', async (req, res) => {
+    const secret = req.query.secret;
+    if (secret !== 'mysecret123') {
+        res.status(403).send('Доступ запрещён');
+        return;
+    }
+    try {
+        // Удаляем из обеих таблиц
+        const adInAds = await dbGet("SELECT * FROM ads WHERE id = ?", [req.params.id]);
+        const adInPermanent = await dbGet("SELECT * FROM permanent_ads WHERE id = ?", [req.params.id]);
+
+        if (!adInAds && !adInPermanent) {
+            console.error('Объявление не найдено для удаления:', { id: req.params.id });
+            res.status(404).send('Объявление не найдено');
+            return;
+        }
+
+        if (adInAds) {
+            await dbRun("DELETE FROM ads WHERE id = ?", [req.params.id]);
+            console.log('Объявление удалено из ads:', { id: req.params.id });
+        }
+        if (adInPermanent) {
+            await dbRun("DELETE FROM permanent_ads WHERE id = ?", [req.params.id]);
+            console.log('Объявление удалено из permanent_ads:', { id: req.params.id });
+        }
+
+        // Уведомляем клиентов через WebSocket
+        io.emit('delete-ad', req.params.id);
+        res.redirect('/moderate?secret=mysecret123');
+    } catch (err) {
+        console.error('Ошибка в /delete-ad:', err);
+        res.status(500).send('Ошибка сервера');
+    }
 });
 
 const RESET_INTERVAL = 24 * 60 * 60 * 1000;
